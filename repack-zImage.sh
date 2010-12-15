@@ -5,12 +5,12 @@
 #                  /data/android/linux-2.6.32 "title of build"
 # based on editor.sh from dkcldark @ xda
 ##############################################################################
-set -x
+#set -x
 # you should point where your cross-compiler is
-COMPILER_PATH="${HOME}/gnuarm-4.0.2/bin"
-COMPILER_PREFIX="arm-elf"
+COMPILER_PATH="${HOME}/arm-none-eabi-4.3.4/bin"
+COMPILER_PREFIX="arm-none-eabi"
 COMPILER="${COMPILER_PATH}/${COMPILER_PREFIX}"
-VERSION=`ls -1 $COMPILER_PATH/../lib/gcc/${COMPILER_PREFIX}`
+VERSION=`ls -1 ${COMPILER_PATH}/../lib/gcc/${COMPILER_PREFIX}/`
 ##############################################################################
 
 zImage=$1
@@ -23,11 +23,20 @@ MKZIP='7z -mx9 -mmt=1 a "$OUTFILE" .'
 TARGET_DEVICE_NAME=SGH-I897
 DATE=`date`
 
+test_exit_code() {
+	if [ "$1" -eq "0" ]; then
+		printf "Done\n"
+	else
+		printf "Failed\n"
+		exit 1
+	fi
+}
+
 #load local definitions for unpack_hook, apply_hook, prepare_hook, post_hook if any
 test -f ./locals.sh && source ./locals.sh
 
 # you should point this where your AOSP root is in the environment
-[ -z "$AOSP" ] && AOSP="/data/android_build/mydroid"
+[ -z "$AOSP" ] && AOSP="/data/android/cm"
 
 write_script() {
     test -n "$TARGET_DEVICE_NAME" && \
@@ -133,10 +142,11 @@ dd if=$Image_here bs=1 skip=$end of=out/tail.img
 # Create the cpio archive
 OUT=`pwd`/out
 pushd $new_ramdisk_dir
+printf "Creating the new ramdisk from ${new_ramdisk_dir}\n"
 find ./ | grep -v ".gitignore" | cpio -o -H newc > $OUT/new_ramdisk.cpio
 popd
 
-# Check the new ramdipk's size
+# Check the new ramdisk's size
 ramdsize=`ls -l out/new_ramdisk.cpio | awk '{print $5}'`
 echo "##### 06. The size of the new ramdisk is = $ramdsize"
 
@@ -177,35 +187,39 @@ cp out/new_Image $KSRC/arch/arm/boot/Image
 pushd $KSRC
 
 #1. Image -> piggy.gz
-echo "##### 11. Image ---> piggy.gz"
+printf  "##### 11. Image ---> piggy.gz..."
 gzip -f -9 < arch/arm/boot/compressed/../Image > arch/arm/boot/compressed/piggy.gz
+test_exit_code $?
 
 #2. piggy.gz -> piggy.o
-echo "##### 12. piggy.gz ---> piggy.o"
+printf "##### 12. piggy.gz ---> piggy.o..."
 $COMPILER-gcc -Wp,-MD,arch/arm/boot/compressed/.piggy.o.d  -nostdinc -isystem $COMPILER_PATH/../lib/gcc/${COMPILER_PREFIX}/${VERSION}/include -Dlinux -Iinclude  -Iarch/arm/include -include include/linux/autoconf.h -D__KERNEL__ -mlittle-endian -Iarch/arm/mach-s5pc110/include -Iarch/arm/plat-s5pc11x/include -Iarch/arm/plat-s3c/include -D__ASSEMBLY__ -mabi=aapcs-linux -mno-thumb-interwork -D__LINUX_ARM_ARCH__=7 -mcpu=cortex-a8  -msoft-float -gdwarf-2  -Wa,-march=all   -c -o arch/arm/boot/compressed/piggy.o arch/arm/boot/compressed/piggy.S
+test_exit_code $?
 
 #3. head.o
-echo "##### 13. Compiling head"
+printf "##### 13. Compiling head..."
 $COMPILER-gcc -Wp,-MD,arch/arm/boot/compressed/.head.o.d  -nostdinc -isystem $COMPILER_PATH/../lib/gcc/${COMPILER_PREFIX}/${VERSION}/include -Dlinux -Iinclude  -Iarch/arm/include -include include/linux/autoconf.h -D__KERNEL__ -mlittle-endian -Iarch/arm/mach-s5pc110/include -Iarch/arm/plat-s5pc11x/include -Iarch/arm/plat-s3c/include -D__ASSEMBLY__ -mabi=aapcs-linux -mno-thumb-interwork -D__LINUX_ARM_ARCH__=7 -mcpu=cortex-a8  -msoft-float -gdwarf-2  -Wa,-march=all   -c -o arch/arm/boot/compressed/head.o arch/arm/boot/compressed/head.S
+test_exit_code $?
 
 #4. misc.o
-echo "##### 14. Compiling misc"
+printf "##### 14. Compiling misc..."
 $COMPILER-gcc -Wp,-MD,arch/arm/boot/compressed/.misc.o.d  -nostdinc -isystem $COMPILER_PATH/../lib/gcc/${COMPILER_PREFIX}/${VERSION}/include -Dlinux -Iinclude  -Iarch/arm/include -include include/linux/autoconf.h -D__KERNEL__ -mlittle-endian -Iarch/arm/mach-s5pc110/include -Iarch/arm/plat-s5pc11x/include -Iarch/arm/plat-s3c/include -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs -fno-strict-aliasing -fno-common -Werror-implicit-function-declaration -Os -marm -fno-omit-frame-pointer -mapcs -mno-sched-prolog -mabi=aapcs-linux -mno-thumb-interwork -D__LINUX_ARM_ARCH__=7 -mcpu=cortex-a8 -msoft-float -Uarm -fno-stack-protector -I/modules/include -fno-omit-frame-pointer -fno-optimize-sibling-calls -g -Wdeclaration-after-statement -Wno-pointer-sign -fwrapv -fpic -fno-builtin -Dstatic=  -D"KBUILD_STR(s)=\#s" -D"KBUILD_BASENAME=KBUILD_STR(misc)"  -D"KBUILD_MODNAME=KBUILD_STR(misc)"  -c -o arch/arm/boot/compressed/misc.o arch/arm/boot/compressed/misc.c
+test_exit_code $?
 
 #5. head.o + misc.o + piggy.o --> vmlinux
-echo "##### 15. head.o + misc.o + piggy.o ---> vmlinux"
+printf "##### 15. head.o + misc.o + piggy.o ---> vmlinux..."
 $COMPILER-ld -EL    --defsym zreladdr=0x30008000 --defsym params_phys=0x30000100 -p --no-undefined -X $COMPILER_PATH/../lib/gcc/${COMPILER_PREFIX}/${VERSION}/libgcc.a -T arch/arm/boot/compressed/vmlinux.lds arch/arm/boot/compressed/head.o arch/arm/boot/compressed/piggy.o arch/arm/boot/compressed/misc.o -o arch/arm/boot/compressed/vmlinux 
+test_exit_code $?
 
 #6. vmlinux -> zImage
-echo "##### 16. vmlinux ---> zImage"
+printf "##### 16. vmlinux ---> zImage..."
 $COMPILER-objcopy -O binary -R .note -R .note.gnu.build-id -R .comment -S  arch/arm/boot/compressed/vmlinux arch/arm/boot/zImage
+test_exit_code $?
 
 popd
-mv $KSRC/arch/arm/boot/zImage out/zImage
-echo "Copying kernel to /data/android_build/kernel-images/zImage-${TITLE}"
-cp $KSRC/arch/arm/boot/zImage out/zImage /data/android_build/kernel-images/zImage-${TITLE}
-
-# I don't care about Odin
+cp $KSRC/arch/arm/boot/zImage out/zImage
+cp $KSRC/arch/arm/boot/zImage /android_build/kernel-images/zImage-${TITLE}
+printf "Your new kernel images was saved as /android_build/kernel-images/zImage-${TITLE}\n"
 exit
 
 echo "##### 17. Creating zImage-inject.tar for Odin"
