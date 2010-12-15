@@ -218,9 +218,6 @@ test_exit_code $?
 
 popd
 cp $KSRC/arch/arm/boot/zImage out/zImage
-cp $KSRC/arch/arm/boot/zImage /android_build/kernel-images/zImage-${TITLE}
-printf "Your new kernel images was saved as /android_build/kernel-images/zImage-${TITLE}\n"
-exit
 
 echo "##### 17. Creating zImage-inject.tar for Odin"
 tar c -C out zImage > zImage-inject.tar
